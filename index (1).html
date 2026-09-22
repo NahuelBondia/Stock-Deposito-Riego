@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Control de Stock — Depósito</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/JsBarcode/3.11.5/JsBarcode.all.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+<style>
+  :root{
+    --bg:#000000;
+    --panel:#0a0f0a;
+    --panel-2:#111a11;
+    --border:#1f3a22;
+    --accent:#22c55e;
+    --accent-dim:#123a1f;
+    --warn:#e8b33e;
+    --warn-dim:#4a3a12;
+    --danger:#c8323a;
+    --danger-dim:#4a1618;
+    --success:#22c55e;
+    --success-dim:#123a1f;
+    --text:#e7fbe9;
+    --text-dim:#6f9578;
+    --mono: 'IBM Plex Mono', monospace;
+    --body: 'IBM Plex Sans', sans-serif;
+    --display: 'Oswald', sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:var(--body);
+    min-height:100vh;
+  }
+  #printArea{ display:none; }
+  body.printing #app{ display:none; }
+  body.printing #printArea{ display:block; }
+
+  .topbar{
+    background:var(--panel);
+    border-bottom:2px solid var(--accent);
+    padding:18px 22px 16px;
+    position:sticky; top:0; z-index:5;
+  }
+  .brand-row{ display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:10px; }
+  .brand{
+    font-family:var(--display); font-weight:700; letter-spacing:0.5px;
+    font-size:22px; text-transform:uppercase;
+  }
+  .brand span{ color:var(--accent); }
+  .brand-sub{ font-family:var(--mono); font-size:11px; color:var(--text-dim); letter-spacing:1.5px; text-transform:uppercase; }
+
+  .stats-row{ display:flex; gap:10px; margin-top:14px; flex-wrap:wrap; }
+  .stat{
+    background:var(--panel-2); border:1px solid var(--border); border-radius:4px;
+    padding:8px 14px; min-width:110px;
+  }
+  .stat .num{ font-family:var(--display); font-size:26px; font-weight:600; line-height:1; }
+  .stat .lbl{ font-family:var(--mono); font-size:10px; color:var(--text-dim); text-transform:uppercase; letter-spacing:1px; margin-top:3px;}
+  .stat.warn .num{ color:var(--warn); }
+
+  .controls-row{ display:flex; gap:10px; margin-top:16px; flex-wrap:wrap; align-items:center; }
+  input, select{
+    font-family:var(--body); background:var(--bg); border:1px solid var(--border);
+    color:var(--text); border-radius:4px; padding:9px 11px; font-size:14px;
+  }
+  input:focus, select:focus{ outline:none; border-color:var(--accent); }
+  #search{ flex:1; min-width:180px; }
+  button{
+    font-family:var(--body); font-weight:600; font-size:13px; cursor:pointer;
+    border-radius:4px; padding:9px 16px; border:1px solid var(--border);
+    background:var(--panel-2); color:var(--text); white-space:nowrap;
+  }
+  button:hover{ border-color:var(--text-dim); }
+  button.primary{ background:var(--accent); border-color:var(--accent); color:#191113; }
+  button.primary:hover{ filter:brightness(1.08); }
+  button.ghost{ background:transparent; }
+  button.danger-btn{ background:var(--danger-dim); border-color:var(--danger); color:#ffd9da; }
+  button.small{ padding:5px 10px; font-size:12px; }
+
+  #app{ padding:20px 22px 60px; max-width:1100px; margin:0 auto; }
+
+  .empty{ text-align:center; color:var(--text-dim); padding:60px 20px; font-family:var(--mono); font-size:13px; }
+
+  .grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(240px,1fr)); gap:14px; margin-top:16px; }
+  .card{
+    background:var(--panel); border:1px solid var(--border); border-radius:6px;
+    padding:14px; cursor:pointer; position:relative; transition:border-color .15s;
+    border-left:4px solid var(--border);
+  }
+  .card:hover{ border-color:var(--text-dim); }
+  .card.low{ border-left-color:var(--warn); }
+  .card .cat{ font-family:var(--mono); font-size:10px; color:var(--text-dim); text-transform:uppercase; letter-spacing:1px; }
+  .card .name{ font-family:var(--display); font-size:17px; font-weight:600; margin:4px 0 8px; line-height:1.2; }
+  .card .qty-row{ display:flex; align-items:baseline; justify-content:space-between; margin-bottom:10px; }
+  .card .qty{ font-family:var(--display); font-size:30px; font-weight:700; }
+  .card .qty.low-qty{ color:var(--warn); }
+  .card .unit{ font-family:var(--mono); font-size:11px; color:var(--text-dim); }
+  .badge-low{
+    font-family:var(--mono); font-size:9px; background:var(--warn-dim); color:#ffe6ab;
+    padding:3px 6px; border-radius:3px; letter-spacing:0.5px; text-transform:uppercase;
+  }
+  .card-head{ display:flex; align-items:flex-start; gap:10px; }
+  .card-head-text{ flex:1; min-width:0; }
+  .thumb{
+    width:44px; height:44px; border-radius:6px; overflow:hidden; flex-shrink:0;
+    background:var(--panel-2); border:1px solid var(--border);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .thumb img{ width:100%; height:100%; object-fit:cover; display:block; }
+  .thumb-placeholder{ font-family:var(--display); font-size:17px; color:var(--text-dim); }
+  .thumb-lg{ width:56px; height:56px; border-radius:8px; }
+  .modal{ position:relative; }
+  .modal-close{
+    position:absolute; top:10px; right:10px; width:30px; height:30px; padding:0;
+    border-radius:50%; font-size:15px; line-height:1; z-index:2;
+  }
+  .card svg.barcode{ width:100%; height:38px; display:block; margin-top:6px; }
+  .card .code-txt{ font-family:var(--mono); font-size:10px; color:var(--text-dim); text-align:center; margin-top:-2px; letter-spacing:1px; }
+
+  .overlay{
+    display:none; position:fixed; inset:0; background:rgba(10,12,13,0.75);
+    align-items:center; justify-content:center; z-index:50; padding:16px;
+  }
+  .overlay.show{ display:flex; }
+  .modal{
+    background:var(--panel); border:1px solid var(--border); border-radius:8px;
+    max-width:420px; width:100%; padding:22px; max-height:88vh; overflow-y:auto;
+  }
+  .modal h2{ font-family:var(--display); font-size:19px; margin:0 0 14px; text-transform:uppercase; letter-spacing:0.5px;}
+  .field{ margin-bottom:12px; }
+  .field label{ display:block; font-family:var(--mono); font-size:10px; color:var(--text-dim); text-transform:uppercase; letter-spacing:1px; margin-bottom:5px; }
+  .field input, .field select{ width:100%; }
+  .row2{ display:flex; gap:10px; }
+  .row2 > div{ flex:1; }
+  .modal-actions{ display:flex; gap:8px; margin-top:16px; flex-wrap:wrap; }
+  .modal-actions button{ flex:1; }
+
+  .detail-code{ font-family:var(--mono); font-size:13px; color:var(--accent); letter-spacing:1px; margin-bottom:8px;}
+  .detail-barcode-wrap{ background:#fff; border-radius:6px; padding:10px; margin-bottom:14px; }
+  .detail-barcode-wrap svg{ width:100%; height:60px; display:block; }
+  .qty-big{ font-family:var(--display); font-size:44px; font-weight:700; text-align:center; margin:6px 0 4px; }
+  .stepper{ display:flex; align-items:center; justify-content:center; gap:14px; margin-bottom:16px; }
+  .stepper button{ width:38px; height:38px; border-radius:50%; font-size:18px; padding:0; }
+  .move-group{ background:var(--panel-2); border:1px solid var(--border); border-radius:6px; padding:12px; margin-bottom:10px; }
+  .move-group .field{ margin-bottom:8px; }
+  .msg{ font-family:var(--mono); font-size:12px; padding:8px 10px; border-radius:4px; margin-bottom:10px; }
+  .msg.error{ background:var(--danger-dim); color:#ffd9da; }
+  .msg.success{ background:var(--success-dim); color:#c7f0d5; }
+
+  #reader{ width:100%; border-radius:6px; overflow:hidden; margin-bottom:12px; background:#000; min-height:180px; }
+  .scan-hint{ font-family:var(--mono); font-size:11px; color:var(--text-dim); text-align:center; margin-bottom:10px; }
+
+  .history-item{ display:flex; justify-content:space-between; align-items:center; padding:9px 0; border-bottom:1px solid var(--border); font-size:13px; }
+  .history-item:last-child{ border-bottom:none; }
+  .history-item .h-left{ display:flex; flex-direction:column; }
+  .history-item .h-name{ font-weight:600; }
+  .history-item .h-meta{ font-family:var(--mono); font-size:10px; color:var(--text-dim); }
+  .history-item .h-delta{ font-family:var(--mono); font-weight:600; font-size:14px; }
+  .h-delta.in{ color:var(--success); }
+  .h-delta.out{ color:var(--accent); }
+
+  .print-label{ width:280px; padding:14px; border:2px dashed #333; font-family:var(--mono); }
+  .print-label h3{ font-family:var(--display); margin:0 0 4px; }
+  @media (max-width:520px){
+    .stats-row{ gap:8px; } .stat{ min-width:90px; padding:7px 10px; } .stat .num{ font-size:21px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand-row">
+    <div>
+      <div class="brand">CONTROL DE <span>STOCK</span></div>
+      <div class="brand-sub">Depósito · Riesgos automáticos</div>
+    </div>
+  </div>
+  <div class="stats-row" id="statsRow"></div>
+  <div class="controls-row">
+    <input id="search" type="text" placeholder="Buscar por nombre, categoría o código...">
+    <button class="primary" onclick="openScanModal()">📷 Escanear código</button>
+    <button onclick="openAddModal()">+ Nuevo material</button>
+    <button class="ghost" onclick="toggleHistory()">Historial</button>
+  </div>
+</div>
+
+<div id="app">
+  <div id="historyPanel" style="display:none; background:var(--panel); border:1px solid var(--border); border-radius:6px; padding:14px; margin-top:16px;">
+    <h2 style="font-family:var(--display); font-size:16px; margin:0 0 8px; text-transform:uppercase;">Últimos movimientos</h2>
+    <div id="historyList"></div>
+  </div>
+  <div id="grid" class="grid"></div>
+  <div id="emptyMsg" class="empty" style="display:none;">No hay materiales que coincidan con la búsqueda.</div>
+</div>
+
+<div class="overlay" id="overlay"><div class="modal" id="modalBody"></div></div>
+<div id="printArea"></div>
+
+<script>
+let state = { materiales: [], historial: [], contador: 0 };
+let currentFilter = '';
+let html5QrCode = null;
+
+const CATEGORIAS = ['Aspersores','Mangueras','Precintos','Válvulas','Extintores','Detectores','Boquillas','Otros'];
+
+const STORAGE_KEY = 'inventario-deposito';
+
+async function init(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(raw){ state = JSON.parse(raw); }
+    else { seedData(); await persist(); }
+  }catch(e){ seedData(); }
+  render();
+  document.getElementById('search').addEventListener('input', (e)=>{ currentFilter = e.target.value; render(); });
+}
+
+function genCodigo(categoria, n){
+  const pref = (categoria||'GEN').substring(0,3).toUpperCase();
+  return `DEP-${pref}-${String(n).padStart(4,'0')}`;
+}
+
+function seedData(){
+  let contador = 0;
+  function make(nombre, categoria, cantidad, minimo){
+    contador++;
+    return {id:'m'+contador, nombre, categoria, codigo:genCodigo(categoria,contador), cantidad, minimo:minimo||0, unidad:'u', actualizado:Date.now()};
+  }
+  const materiales = [
+    make('Aspersor estándar','Aspersores',1,2),
+    make('Manguera contra incendio 20m','Mangueras',3,2),
+    make('Precinto de seguridad','Precintos',4,5),
+  ];
+  state = { materiales, historial:[], contador };
+}
+
+async function persist(){
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+  catch(e){ console.error('Error al guardar', e); }
+}
+
+function findByCode(code){
+  if(!code) return null;
+  const c = code.trim().toLowerCase();
+  return state.materiales.find(m => m.codigo.toLowerCase() === c) || null;
+}
+
+function addMaterial({nombre, categoria, cantidad, minimo, unidad, imagen}){
+  state.contador++;
+  const mat = {
+    id:'m'+state.contador, nombre, categoria,
+    codigo: genCodigo(categoria, state.contador),
+    cantidad: Number(cantidad)||0, minimo: Number(minimo)||0,
+    unidad: unidad || 'u', imagen: imagen || null, actualizado: Date.now()
+  };
+  state.materiales.push(mat);
+  persist();
+  return mat;
+}
+
+function adjustQuantity(id, tipo, cantidad){
+  const mat = state.materiales.find(m=>m.id===id);
+  if(!mat) return {ok:false, msg:'Material no encontrado.'};
+  cantidad = Number(cantidad);
+  if(!cantidad || cantidad <= 0) return {ok:false, msg:'Ingresá una cantidad válida.'};
+  if(tipo==='salida' && cantidad > mat.cantidad){
+    return {ok:false, msg:`No hay suficiente stock (quedan ${mat.cantidad} ${mat.unidad}).`};
+  }
+  mat.cantidad += tipo==='entrada' ? cantidad : -cantidad;
+  mat.actualizado = Date.now();
+  state.historial.unshift({fecha:Date.now(), materialId:id, nombre:mat.nombre, codigo:mat.codigo, tipo, cantidad, resultante:mat.cantidad});
+  state.historial = state.historial.slice(0,200);
+  persist();
+  return {ok:true};
+}
+
+function deleteMaterial(id){
+  state.materiales = state.materiales.filter(m=>m.id!==id);
+  persist();
+}
+
+// ---------- RENDER ----------
+function render(){
+  renderStats();
+  const grid = document.getElementById('grid');
+  const empty = document.getElementById('emptyMsg');
+  const filter = currentFilter.trim().toLowerCase();
+  const list = state.materiales.filter(m =>
+    !filter || m.nombre.toLowerCase().includes(filter) || m.categoria.toLowerCase().includes(filter) || m.codigo.toLowerCase().includes(filter)
+  ).sort((a,b)=> a.nombre.localeCompare(b.nombre));
+
+  if(list.length===0){
+    grid.innerHTML=''; empty.style.display='block';
+  } else {
+    empty.style.display='none';
+    grid.innerHTML = list.map(m=>{
+      const low = m.minimo>0 && m.cantidad<=m.minimo;
+      const inicial = (m.nombre||'?').trim().charAt(0).toUpperCase();
+      return `
+      <div class="card ${low?'low':''}" onclick="openDetailModal('${m.id}')">
+        <div class="card-head">
+          <div class="thumb">${m.imagen ? `<img src="${m.imagen}" alt="">` : `<div class="thumb-placeholder">${inicial}</div>`}</div>
+          <div class="card-head-text">
+            <div class="cat">${escapeHtml(m.categoria)}</div>
+            <div class="name">${escapeHtml(m.nombre)}</div>
+          </div>
+        </div>
+        <div class="qty-row">
+          <div><span class="qty ${low?'low-qty':''}">${m.cantidad}</span> <span class="unit">${escapeHtml(m.unidad)}</span></div>
+          ${low?'<span class="badge-low">Stock bajo</span>':''}
+        </div>
+        <svg class="barcode" data-code="${m.codigo}"></svg>
+        <div class="code-txt">${m.codigo}</div>
+      </div>`;
+    }).join('');
+    renderBarcodes();
+  }
+  renderHistory();
+}
+
+function renderStats(){
+  const totalTipos = state.materiales.length;
+  const totalUnidades = state.materiales.reduce((s,m)=>s+m.cantidad,0);
+  const bajos = state.materiales.filter(m=>m.minimo>0 && m.cantidad<=m.minimo).length;
+  document.getElementById('statsRow').innerHTML = `
+    <div class="stat"><div class="num">${totalTipos}</div><div class="lbl">Materiales</div></div>
+    <div class="stat"><div class="num">${totalUnidades}</div><div class="lbl">Unidades totales</div></div>
+    <div class="stat ${bajos>0?'warn':''}"><div class="num">${bajos}</div><div class="lbl">Stock bajo</div></div>
+  `;
+}
+
+function renderBarcodes(){
+  document.querySelectorAll('svg.barcode[data-code]').forEach(svg=>{
+    try{
+      JsBarcode(svg, svg.getAttribute('data-code'), {
+        format:'CODE128', lineColor:'#edeeea', width:1.4, height:32,
+        displayValue:false, background:'transparent', margin:0
+      });
+    }catch(e){}
+  });
+}
+
+function toggleHistory(){
+  const panel = document.getElementById('historyPanel');
+  panel.style.display = panel.style.display==='none' ? 'block' : 'none';
+}
+
+function renderHistory(){
+  const el = document.getElementById('historyList');
+  if(state.historial.length===0){
+    el.innerHTML = '<div class="empty" style="padding:20px 0;">Todavía no hay movimientos registrados.</div>';
+    return;
+  }
+  el.innerHTML = state.historial.slice(0,40).map(h=>{
+    const fecha = new Date(h.fecha);
+    const fstr = fecha.toLocaleDateString('es-AR') + ' ' + fecha.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'});
+    return `
+    <div class="history-item">
+      <div class="h-left">
+        <span class="h-name">${escapeHtml(h.nombre)}</span>
+        <span class="h-meta">${h.codigo} · ${fstr}</span>
+      </div>
+      <div class="h-delta ${h.tipo==='entrada'?'in':'out'}">${h.tipo==='entrada'?'+':'−'}${h.cantidad} → ${h.resultante}</div>
+    </div>`;
+  }).join('');
+}
+
+function resizeImageFile(file, maxSize){
+  maxSize = maxSize || 160;
+  return new Promise((resolve, reject)=>{
+    const reader = new FileReader();
+    reader.onload = (e)=>{
+      const img = new Image();
+      img.onload = ()=>{
+        let w = img.width, h = img.height;
+        if(w > h){ if(w > maxSize){ h = Math.round(h*maxSize/w); w = maxSize; } }
+        else { if(h > maxSize){ w = Math.round(w*maxSize/h); h = maxSize; } }
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', 0.75));
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function handleImageSelected(id, inputEl){
+  const file = inputEl.files && inputEl.files[0];
+  if(!file) return;
+  try{
+    const dataUrl = await resizeImageFile(file);
+    if(id){
+      const m = state.materiales.find(x=>x.id===id);
+      if(m){ m.imagen = dataUrl; persist(); openDetailModal(id); }
+    } else {
+      window.__pendingImage = dataUrl;
+      const prev = document.getElementById('img-preview');
+      if(prev){ prev.innerHTML = `<img src="${dataUrl}" alt="">`; }
+    }
+  }catch(e){ console.error('No se pudo procesar la imagen', e); }
+}
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// ---------- MODALES ----------
+function showModal(html){
+  document.getElementById('modalBody').innerHTML = '<button class="modal-close ghost" onclick="closeModal()">✕</button>' + html;
+  document.getElementById('overlay').classList.add('show');
+}
+function closeModal(){
+  stopScanner();
+  document.getElementById('overlay').classList.remove('show');
+}
+document.getElementById('overlay').addEventListener('click', (e)=>{
+  if(e.target.id==='overlay') closeModal();
+});
+
+function openAddModal(){
+  window.__pendingImage = null;
+  showModal(`
+    <h2>Nuevo material</h2>
+    <div class="field"><label>Imagen (opcional)</label>
+      <div style="display:flex; align-items:center; gap:10px;">
+        <div class="thumb thumb-lg" id="img-preview"><div class="thumb-placeholder">?</div></div>
+        <input style="flex:1;" type="file" accept="image/*" onchange="handleImageSelected(null, this)">
+      </div>
+    </div>
+    <div class="field"><label>Nombre</label><input id="f-nombre" type="text" placeholder="Ej: Aspersor estándar"></div>
+    <div class="row2">
+      <div class="field"><label>Categoría</label>
+        <select id="f-categoria">${CATEGORIAS.map(c=>`<option value="${c}">${c}</option>`).join('')}</select>
+      </div>
+      <div class="field"><label>Unidad</label><input id="f-unidad" type="text" value="u" placeholder="u, m, caja..."></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Cantidad inicial</label><input id="f-cantidad" type="number" min="0" value="0"></div>
+      <div class="field"><label>Stock mínimo (alerta)</label><input id="f-minimo" type="number" min="0" value="0"></div>
+    </div>
+    <div id="addMsg"></div>
+    <div class="modal-actions">
+      <button class="ghost" onclick="closeModal()">Cancelar</button>
+      <button class="primary" onclick="submitAddMaterial()">Guardar y generar código</button>
+    </div>
+  `);
+}
+
+function submitAddMaterial(){
+  const nombre = document.getElementById('f-nombre').value.trim();
+  const categoria = document.getElementById('f-categoria').value;
+  const unidad = document.getElementById('f-unidad').value.trim() || 'u';
+  const cantidad = document.getElementById('f-cantidad').value;
+  const minimo = document.getElementById('f-minimo').value;
+  if(!nombre){
+    document.getElementById('addMsg').innerHTML = '<div class="msg error">Ingresá un nombre para el material.</div>';
+    return;
+  }
+  const mat = addMaterial({nombre, categoria, cantidad, minimo, unidad, imagen: window.__pendingImage});
+  window.__pendingImage = null;
+  render();
+  openDetailModal(mat.id);
+}
+
+function openDetailModal(id){
+  const m = state.materiales.find(x=>x.id===id);
+  if(!m) return;
+  const low = m.minimo>0 && m.cantidad<=m.minimo;
+  const inicialDet = (m.nombre||'?').trim().charAt(0).toUpperCase();
+  showModal(`
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom:2px;">
+      <div class="thumb thumb-lg">${m.imagen ? `<img src="${m.imagen}" alt="">` : `<div class="thumb-placeholder">${inicialDet}</div>`}</div>
+      <h2 style="margin:0;">${escapeHtml(m.nombre)}</h2>
+    </div>
+    <div class="detail-code">${m.codigo} · ${escapeHtml(m.categoria)}</div>
+    <div class="field"><label>Cambiar imagen</label><input type="file" accept="image/*" onchange="handleImageSelected('${m.id}', this)"></div>
+    <div class="detail-barcode-wrap"><svg id="detailBarcode"></svg></div>
+    <div class="qty-big">${m.cantidad} <span style="font-size:16px; color:var(--text-dim);">${escapeHtml(m.unidad)}</span></div>
+    ${low ? '<div class="msg error" style="text-align:center;">Stock por debajo del mínimo ('+m.minimo+')</div>' : ''}
+
+    <div class="move-group">
+      <div class="field"><label>Retirar cantidad</label>
+        <div class="row2">
+          <input id="salida-cant" type="number" min="1" placeholder="Cantidad">
+          <button class="danger-btn" onclick="doAdjust('${m.id}','salida')">Retirar</button>
+        </div>
+      </div>
+    </div>
+    <div class="move-group">
+      <div class="field"><label>Ingresar / reponer cantidad</label>
+        <div class="row2">
+          <input id="entrada-cant" type="number" min="1" placeholder="Cantidad">
+          <button class="primary" onclick="doAdjust('${m.id}','entrada')">Agregar</button>
+        </div>
+      </div>
+    </div>
+    <div id="detailMsg"></div>
+
+    <div class="row2" style="margin-top:6px;">
+      <div class="field"><label>Stock mínimo (alerta)</label><input id="min-edit" type="number" min="0" value="${m.minimo}"></div>
+      <div class="field"><label>&nbsp;</label><button style="width:100%;" onclick="saveMinimo('${m.id}')">Guardar mínimo</button></div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="ghost" onclick="printLabel('${m.id}')">🖨️ Imprimir etiqueta</button>
+      <button class="danger-btn" onclick="confirmDelete('${m.id}')">Eliminar</button>
+    </div>
+  `);
+  setTimeout(()=>{
+    try{
+      JsBarcode('#detailBarcode', m.codigo, {format:'CODE128', lineColor:'#14181a', width:2, height:55, displayValue:true, fontSize:13, background:'#ffffff', margin:6});
+    }catch(e){}
+  },0);
+}
+
+function doAdjust(id, tipo){
+  const inputId = tipo==='salida' ? 'salida-cant' : 'entrada-cant';
+  const val = document.getElementById(inputId).value;
+  const res = adjustQuantity(id, tipo, val);
+  const msgEl = document.getElementById('detailMsg');
+  if(!res.ok){
+    msgEl.innerHTML = `<div class="msg error">${res.msg}</div>`;
+  } else {
+    render();
+    openDetailModal(id);
+    setTimeout(()=>{
+      const m = document.getElementById('detailMsg');
+      if(m) m.innerHTML = `<div class="msg success">Movimiento registrado.</div>`;
+    },0);
+  }
+}
+
+function saveMinimo(id){
+  const m = state.materiales.find(x=>x.id===id);
+  if(!m) return;
+  m.minimo = Number(document.getElementById('min-edit').value)||0;
+  persist();
+  render();
+  openDetailModal(id);
+}
+
+function confirmDelete(id){
+  const m = state.materiales.find(x=>x.id===id);
+  if(!m) return;
+  showModal(`
+    <h2>Eliminar material</h2>
+    <p style="font-size:14px; color:var(--text-dim);">¿Seguro que querés eliminar <b style="color:var(--text);">${escapeHtml(m.nombre)}</b> (${m.codigo}) del inventario? Esta acción no se puede deshacer.</p>
+    <div class="modal-actions">
+      <button class="ghost" onclick="openDetailModal('${id}')">Cancelar</button>
+      <button class="danger-btn" onclick="deleteMaterial('${id}'); closeModal(); render();">Sí, eliminar</button>
+    </div>
+  `);
+}
+
+function printLabel(id){
+  const m = state.materiales.find(x=>x.id===id);
+  if(!m) return;
+  const printArea = document.getElementById('printArea');
+  printArea.innerHTML = `
+    <div class="print-label">
+      <h3>${escapeHtml(m.nombre)}</h3>
+      <div>${escapeHtml(m.categoria)}</div>
+      <svg id="printBarcode" style="width:100%; height:60px; margin-top:8px;"></svg>
+    </div>`;
+  try{
+    JsBarcode('#printBarcode', m.codigo, {format:'CODE128', lineColor:'#000', width:2, height:55, displayValue:true, fontSize:13, background:'#fff', margin:4});
+  }catch(e){}
+  document.body.classList.add('printing');
+  setTimeout(()=>{
+    window.print();
+    document.body.classList.remove('printing');
+  }, 80);
+}
+
+// ---------- ESCANEO ----------
+function openScanModal(){
+  showModal(`
+    <h2>Escanear código</h2>
+    <div id="reader"></div>
+    <div class="scan-hint" id="scanHint">Apuntá la cámara al código de barras del material.</div>
+    <div class="field"><label>O ingresá el código manualmente</label>
+      <div class="row2">
+        <input id="manual-code" type="text" placeholder="DEP-ASP-0001">
+        <button class="primary" onclick="lookupManualCode()">Buscar</button>
+      </div>
+    </div>
+    <div id="scanMsg"></div>
+    <div class="modal-actions"><button class="ghost" onclick="closeModal()">Cerrar</button></div>
+  `);
+  setTimeout(startScanner, 100);
+}
+
+function startScanner(){
+  if(typeof Html5Qrcode === 'undefined') return;
+  const hint = document.getElementById('scanHint');
+  try{
+    html5QrCode = new Html5Qrcode('reader');
+    html5QrCode.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: { width: 260, height: 140 } },
+      (decodedText)=>{ handleScanResult(decodedText); },
+      ()=>{}
+    ).catch(()=>{
+      if(hint) hint.innerHTML = 'No se pudo acceder a la cámara acá. Usá el campo de código manual.';
+      const reader = document.getElementById('reader');
+      if(reader) reader.style.display='none';
+    });
+  }catch(e){
+    if(hint) hint.innerHTML = 'La cámara no está disponible en este entorno. Usá el campo de código manual.';
+    const reader = document.getElementById('reader');
+    if(reader) reader.style.display='none';
+  }
+}
+
+function stopScanner(){
+  if(html5QrCode){
+    try{ html5QrCode.stop().then(()=>html5QrCode.clear()).catch(()=>{}); }catch(e){}
+    html5QrCode = null;
+  }
+}
+
+function lookupManualCode(){
+  const code = document.getElementById('manual-code').value;
+  handleScanResult(code);
+}
+
+function handleScanResult(code){
+  const mat = findByCode(code);
+  const msgEl = document.getElementById('scanMsg');
+  if(mat){
+    stopScanner();
+    openDetailModal(mat.id);
+  } else if(msgEl){
+    msgEl.innerHTML = `<div class="msg error">No existe ningún material con el código "${escapeHtml(code)}". <br>¿Querés crearlo?</div>
+      <button class="primary" style="margin-top:8px; width:100%;" onclick="createFromCode('${escapeHtml(code)}')">Crear material con este código</button>`;
+  }
+}
+
+function createFromCode(code){
+  stopScanner();
+  window.__pendingImage = null;
+  showModal(`
+    <h2>Nuevo material</h2>
+    <div class="field"><label>Código escaneado</label><input type="text" value="${escapeHtml(code)}" disabled></div>
+    <div class="field"><label>Imagen (opcional)</label>
+      <div style="display:flex; align-items:center; gap:10px;">
+        <div class="thumb thumb-lg" id="img-preview"><div class="thumb-placeholder">?</div></div>
+        <input style="flex:1;" type="file" accept="image/*" onchange="handleImageSelected(null, this)">
+      </div>
+    </div>
+    <div class="field"><label>Nombre</label><input id="f-nombre" type="text" placeholder="Ej: Aspersor estándar"></div>
+    <div class="row2">
+      <div class="field"><label>Categoría</label>
+        <select id="f-categoria">${CATEGORIAS.map(c=>`<option value="${c}">${c}</option>`).join('')}</select>
+      </div>
+      <div class="field"><label>Unidad</label><input id="f-unidad" type="text" value="u"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Cantidad inicial</label><input id="f-cantidad" type="number" min="0" value="0"></div>
+      <div class="field"><label>Stock mínimo</label><input id="f-minimo" type="number" min="0" value="0"></div>
+    </div>
+    <div id="addMsg"></div>
+    <div class="modal-actions">
+      <button class="ghost" onclick="closeModal()">Cancelar</button>
+      <button class="primary" onclick="submitCreateFromCode('${escapeHtml(code)}')">Guardar</button>
+    </div>
+  `);
+}
+
+function submitCreateFromCode(code){
+  const nombre = document.getElementById('f-nombre').value.trim();
+  const categoria = document.getElementById('f-categoria').value;
+  const unidad = document.getElementById('f-unidad').value.trim() || 'u';
+  const cantidad = Number(document.getElementById('f-cantidad').value)||0;
+  const minimo = Number(document.getElementById('f-minimo').value)||0;
+  if(!nombre){
+    document.getElementById('addMsg').innerHTML = '<div class="msg error">Ingresá un nombre para el material.</div>';
+    return;
+  }
+  const mat = {id:'m'+(++state.contador), nombre, categoria, codigo:code, cantidad, minimo, unidad, imagen: window.__pendingImage, actualizado:Date.now()};
+  state.materiales.push(mat);
+  window.__pendingImage = null;
+  persist();
+  render();
+  openDetailModal(mat.id);
+}
+
+init();
+</script>
+</body>
+</html>
